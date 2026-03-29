@@ -8,18 +8,9 @@ Figma's REST API is rate-limited (6 calls/month on free tier) and existing MCP s
 
 ## How It Works
 
-```
-┌─────────────┐     stdio      ┌──────────────┐   WebSocket    ┌──────────────┐
-│  AI Client   │ ────────────▶ │  MCP Server  │ ◀───────────▶ │ Figma Plugin │
-│  (Claude,    │               │  (Node.js)   │  127.0.0.1    │ (Desktop)    │
-│   Cursor,    │               │  25 tools    │  token auth   │ Plugin API   │
-│   GPT...)    │               └──────────────┘               └──────┬───────┘
-└─────────────┘                                                      │
-                                                               ┌─────▼──────┐
-                                                               │   Figma    │
-                                                               │   Canvas   │
-                                                               └────────────┘
-```
+[![Architecture Diagram](https://img.shields.io/badge/View_Architecture-Excalidraw-6965db?style=for-the-badge&logo=excalidraw)](https://excalidraw.com/#json=MLHFuzV0Suz99I7rG5aJC,hm3dBFHuubaOMJVYyOVfjA)
+
+> [Open interactive architecture diagram on Excalidraw](https://excalidraw.com/#json=MLHFuzV0Suz99I7rG5aJC,hm3dBFHuubaOMJVYyOVfjA)
 
 **Three components run simultaneously:**
 
