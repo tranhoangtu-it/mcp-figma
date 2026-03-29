@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Inter, system-ui, sans-serif; font-size: 12px; padding: 12px; background: #2c2c2c; color: #e0e0e0; }
+  .header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .status-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .status-dot.connected { background: #0fa573; }
+  .status-dot.disconnected { background: #f24822; }
+  .status-dot.connecting { background: #a259ff; animation: pulse 1s infinite; }
+  @keyframes pulse { 50% { opacity: 0.5; } }
+  h3 { font-size: 13px; font-weight: 600; }
+  .status-text { font-size: 11px; color: #999; }
+  label { display: block; font-size: 11px; color: #999; margin-bottom: 4px; margin-top: 10px; }
+  input { width: 100%; padding: 6px 8px; border: 1px solid #444; border-radius: 4px; background: #1e1e1e; color: #e0e0e0; font-size: 12px; }
+  input:focus { outline: none; border-color: #a259ff; }
+  .row { display: flex; gap: 8px; }
+  .row input:first-child { flex: 1; }
+  .row input:last-child { width: 70px; }
+  button { margin-top: 10px; width: 100%; padding: 8px; border: none; border-radius: 4px; background: #a259ff; color: white; font-size: 12px; font-weight: 600; cursor: pointer; }
+  button:hover { background: #8b3fe0; }
+  button.disconnect { background: #f24822; }
+  button.disconnect:hover { background: #d93d1a; }
+  .log { margin-top: 12px; background: #1e1e1e; border-radius: 4px; padding: 8px; max-height: 120px; overflow-y: auto; font-family: monospace; font-size: 10px; color: #888; }
+  .log-entry { padding: 2px 0; border-bottom: 1px solid #333; }
+  .log-entry.error { color: #f24822; }
+  .log-entry.success { color: #0fa573; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="status-dot disconnected" id="statusDot"></div>
+  <div>
+    <h3>MCP Figma Bridge</h3>
+    <div class="status-text" id="statusText">Disconnected</div>
+  </div>
+</div>
+
+<label>Token</label>
+<input type="text" id="tokenInput" placeholder="Paste session token from MCP server">
+
+<label>Connection</label>
+<div class="row">
+  <input type="text" id="hostInput" value="localhost" placeholder="Host">
+  <input type="number" id="portInput" value="3055" placeholder="Port">
+</div>
+
+<label>Channel</label>
+<input type="text" id="channelInput" value="mcp-figma" placeholder="Channel name">
+
+<button id="connectBtn" onclick="toggleConnection()">Connect</button>
+
+<div class="log" id="log"></div>
+
+<script>
+  let ws = null;
+  let reconnectTimer = null;
+  let reconnectDelay = 1000;
+  const MAX_RECONNECT_DELAY = 30000;
+  const MAX_LOG_ENTRIES = 50;
+
+  const statusDot = document.getElementById('statusDot');
+  const statusText = document.getElementById('statusText');
+  const connectBtn = document.getElementById('connectBtn');
+  const logEl = document.getElementById('log');
+
+  // --- Logging ---
+  function log(text, type) {
+    const entry = document.createElement('div');
+    entry.className = 'log-entry' + (type ? ' ' + type : '');
+    entry.textContent = new Date().toLocaleTimeString() + ' ' + text;
+    logEl.prepend(entry);
+    while (logEl.children.length > MAX_LOG_ENTRIES) {
+      logEl.removeChild(logEl.lastChild);
+    }
+  }
+
+  // --- Status ---
+  function setStatus(state, text) {
+    statusDot.className = 'status-dot ' + state;
+    statusText.textContent = text;
+    if (state === 'connected') {
+      connectBtn.textContent = 'Disconnect';
+      connectBtn.className = 'disconnect';
+    } else {
+      connectBtn.textContent = 'Connect';
+      connectBtn.className = '';
+    }
+  }
+
+  // --- WebSocket ---
+  function connect() {
+    const host = document.getElementById('hostInput').value || 'localhost';
+    const port = document.getElementById('portInput').value || '3055';
+    const token = document.getElementById('tokenInput').value.trim();
+    const channel = document.getElementById('channelInput').value.trim() || 'mcp-figma';
+
+    if (!token) { log('Token required', 'error'); return; }
+
+    setStatus('connecting', 'Connecting...');
+    log('Connecting to ws://' + host + ':' + port);
+
+    try {
+      ws = new WebSocket('ws://' + host + ':' + port);
+    } catch (e) {
+      log('Connection failed: ' + e.message, 'error');
+      setStatus('disconnected', 'Connection failed');
+      scheduleReconnect();
+      return;
+    }
+
+    ws.onopen = function() {
+      log('Connected, authenticating...', 'success');
+      // Send auth message first
+      ws.send(JSON.stringify({ type: 'auth', token: token, channel: channel }));
+    };
+
+    ws.onmessage = function(event) {
+      let msg;
+      try { msg = JSON.parse(event.data); } catch { return; }
+
+      if (msg.type === 'system' && msg.message === 'Authenticated and joined channel') {
+        setStatus('connected', 'Connected — channel: ' + channel);
+        reconnectDelay = 1000;
+        log('Authenticated on channel: ' + channel, 'success');
+        return;
+      }
+
+      if (msg.type === 'error') {
+        log('Server error: ' + msg.message, 'error');
+        return;
+      }
+
+      // Forward command from MCP server to plugin code
+      if (msg.type === 'message' && msg.message && msg.message.command) {
+        log('CMD: ' + msg.message.command);
+        parent.postMessage({
+          pluginMessage: {
+            type: 'execute-command',
+            command: msg.message.command,
+            params: msg.message.params || {},
+            id: msg.message.id
+          }
+        }, '*');
+        return;
+      }
+
+      // Forward progress from MCP server
+      if (msg.type === 'progress') {
+        log('Progress: ' + (msg.message.message || msg.message.status));
+      }
+    };
+
+    ws.onclose = function(event) {
+      setStatus('disconnected', 'Disconnected');
+      log('Disconnected (code: ' + event.code + ')', event.code === 4001 ? 'error' : '');
+      ws = null;
+      // Don't reconnect on auth failure
+      if (event.code !== 4001) {
+        scheduleReconnect();
+      }
+    };
+
+    ws.onerror = function() {
+      log('Connection error', 'error');
+    };
+  }
+
+  function disconnect() {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+    if (ws) {
+      ws.close(1000, 'User disconnect');
+      ws = null;
+    }
+    setStatus('disconnected', 'Disconnected');
+    log('Disconnected by user');
+  }
+
+  function toggleConnection() {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      disconnect();
+    } else {
+      connect();
+    }
+  }
+
+  function scheduleReconnect() {
+    if (reconnectTimer) return;
+    log('Reconnecting in ' + (reconnectDelay / 1000) + 's...');
+    reconnectTimer = setTimeout(function() {
+      reconnectTimer = null;
+      connect();
+    }, reconnectDelay);
+    reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY);
+  }
+
+  // --- Plugin code → WebSocket (send results back) ---
+  window.onmessage = function(event) {
+    const msg = event.data.pluginMessage;
+    if (!msg) return;
+
+    // Command result from code.js → send to MCP server via WS
+    if (msg.type === 'command-result' && ws && ws.readyState === WebSocket.OPEN) {
+      const channel = document.getElementById('channelInput').value.trim() || 'mcp-figma';
+      ws.send(JSON.stringify({
+        type: 'message',
+        channel: channel,
+        message: {
+          result: msg.result,
+          id: msg.id,
+          error: msg.error
+        }
+      }));
+      log('Result sent for: ' + msg.id.substring(0, 8));
+    }
+
+    // Progress from code.js → forward to MCP server
+    if (msg.type === 'command-progress' && ws && ws.readyState === WebSocket.OPEN) {
+      const channel = document.getElementById('channelInput').value.trim() || 'mcp-figma';
+      ws.send(JSON.stringify({
+        type: 'progress',
+        channel: channel,
+        message: {
+          id: msg.id,
+          status: msg.status,
+          percentage: msg.percentage,
+          message: msg.message,
+          result: msg.result
+        }
+      }));
+    }
+  };
+</script>
+</body>
+</html>

@@ -1,0 +1,37 @@
+{
+  "name": "mcp-figma",
+  "version": "0.1.0",
+  "description": "MCP server bridging AI clients to Figma Desktop via Plugin API + WebSocket",
+  "type": "module",
+  "main": "dist/mcp-server/index.js",
+  "bin": "dist/mcp-server/index.js",
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "ws": "node dist/websocket/ws-server.js",
+    "start": "node dist/mcp-server/index.js",
+    "test": "node --import tsx --test src/**/*.test.ts",
+    "test:ws": "node --import tsx --test src/websocket/*.test.ts"
+  },
+  "keywords": [
+    "mcp",
+    "figma",
+    "design",
+    "ai",
+    "plugin"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.28.0",
+    "ws": "^8.20.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "@types/ws": "^8.18.1",
+    "tsup": "^8.5.1",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2"
+  }
+}
