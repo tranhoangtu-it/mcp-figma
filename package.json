@@ -20,8 +20,16 @@
     "ai",
     "plugin"
   ],
-  "author": "",
+  "author": "tranhoangtu-it",
   "license": "MIT",
+  "homepage": "https://github.com/tranhoangtu-it/mcp-figma#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tranhoangtu-it/mcp-figma.git"
+  },
+  "bugs": {
+    "url": "https://github.com/tranhoangtu-it/mcp-figma/issues"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.28.0",
     "ws": "^8.20.0",
